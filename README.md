@@ -1,1 +1,1 @@
-![Screenshot](https://github.com/kay-ki/VizTime/blob/main/viztime.png)
+![Screenshot](https://raw.githubusercontent.com/kay-ki/VizTime/main/viztime.png)
