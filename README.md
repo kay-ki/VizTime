@@ -8,4 +8,4 @@
 
 ## Screenshot
 
-![Screenshot](https://raw.githubusercontent.com/kay-ki/VizTime/main/viztime.png)
+![Screenshot](viztime.png)
