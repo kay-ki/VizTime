@@ -11,12 +11,14 @@ from tkinter import simpledialog
 import ttkbootstrap as ttk
 
 timer_progress_percentage = 0
-
+time_left = 0
+running = False
+paused = False
 
 def update_layout():
     if clock_24h_var.get() == 1:
-        top_progress.place_configure(rely=0, relheight=0.5)
-        top_progress_24h.place_configure(relheight=0.5, relwidth=1, rely=0.5)
+        top_progress.place_configure(rely=0.5, relheight=0.5)
+        top_progress_24h.place_configure(relheight=0.5, relwidth=1, rely=0)
         top_progress_24h["value"] = (
             (datetime.datetime.now().hour * 60 + datetime.datetime.now().minute)
             / 1440
@@ -25,9 +27,7 @@ def update_layout():
     else:
         top_progress.place_configure(rely=0, relheight=1)
         top_progress_24h.place_forget()
-    # Update the top_progress with the current timer progress after adjusting the layout
     top_progress["value"] = timer_progress_percentage
-
 
 def update_24h_progress():
     now = datetime.datetime.now()
@@ -39,7 +39,6 @@ def update_24h_progress():
         top_progress_24h["value"] = daily_progress
     root.after(1000, update_24h_progress)
 
-
 def play_beep(frequency=440, duration=1000, volume=0.5):
     sample_rate = 44100
     t = np.linspace(0, duration / 1000, int(sample_rate * (duration / 1000)), False)
@@ -49,29 +48,21 @@ def play_beep(frequency=440, duration=1000, volume=0.5):
     play_obj = sa.play_buffer(audio, 1, 2, sample_rate)
     play_obj.wait_done()
 
-
 def toggle_top_progress():
     if toggle_top_progress_var.get() == 1:
         top_root.deiconify()
-        if clock_24h_var.get() == 0:
-            top_progress.place_configure(rely=0, relheight=1)
-        else:
-            top_progress.place_configure(rely=0.5, relheight=0.5)
-            top_progress_24h.place_configure(relheight=0.5)
+        update_layout()
     else:
         top_root.withdraw()
 
-
 def beep():
-    global time_left, paused
-    time_left = interval.get() * 60
-    update_interval_label()
+    global time_left, paused, running
     while running:
         while time_left > 0 and running:
             if not paused:
                 time.sleep(1)
                 time_left -= 1
-                update_progress(time_left)
+                update_progress()
             else:
                 time.sleep(0.1)
         if not running:
@@ -80,11 +71,11 @@ def beep():
         if not paused:
             play_beep(frequency=volume.get(), duration=1000)
         if repeat_var.get() == 0:
+            stop_beeping()
             break
         if repeat_var.get() == 1:
             time_left = interval.get() * 60
-            update_progress(time_left)
-
+            update_progress()
 
 def set_interval():
     new_interval = simpledialog.askinteger(
@@ -95,65 +86,51 @@ def set_interval():
         update_interval_label()
         reset_progress()
 
-
 def update_interval_label():
     current_interval_label.config(text=f"Current Interval: {interval.get()} min")
 
-
-def update_progress(time_left):
+def update_progress():
     global timer_progress_percentage
     timer_progress_percentage = 100 - (time_left / (interval.get() * 60) * 100)
     progress["value"] = timer_progress_percentage
-    top_progress[
-        "value"
-    ] = timer_progress_percentage  # Use the global variable to set the value
-    if toggle_top_progress_var.get() == 1:
-        if clock_24h_var.get() == 1:
-            top_progress.place_configure(rely=0, relheight=0.5)
-        else:
-            top_progress.place_configure(rely=0, relheight=1)
+    top_progress["value"] = timer_progress_percentage
     root.update_idletasks()
-
 
 def reset_progress():
+    global timer_progress_percentage
+    timer_progress_percentage = 0
     progress["value"] = 0
-    if toggle_top_progress_var.get() == 1:
-        top_progress["value"] = 0
+    top_progress["value"] = 0
     root.update_idletasks()
 
-
 def start_beeping():
-    global running, paused
-    if running:
-        return
-    running = True
-    paused = False
-    threading.Thread(target=beep, daemon=True).start()
-
+    global running, paused, time_left
+    if not running:
+        running = True
+        paused = False
+        time_left = interval.get() * 60
+        update_progress()
+        threading.Thread(target=beep, daemon=True).start()
+    elif paused:
+        paused = False
 
 def stop_beeping():
     global running, paused, time_left
-    if running:
-        running = False
-        paused = False
-        time_left = 0
-        update_progress(time_left)
-        reset_progress()
-
+    running = False
+    paused = False
+    time_left = 0
+    reset_progress()
 
 def pause_beeping():
     global paused
-    paused = not paused
-
+    if running:
+        paused = not paused
 
 def create_image():
-    # Create an image for the tray icon
     image = Image.new("RGBA", (64, 64), (255, 255, 255, 0))
     dc = ImageDraw.Draw(image)
-
     center = (32, 32)
     radius = 30
-
     dc.ellipse(
         [
             center[0] - radius,
@@ -164,45 +141,35 @@ def create_image():
         outline="black",
         fill="white",
     )
-
     hour_hand_length = 20
-    hour_angle = (10 / 12) * 360  # 10 hours, in degrees
+    hour_angle = (10 / 12) * 360
     hour_end = (
         center[0] + hour_hand_length * np.sin(np.radians(hour_angle)),
         center[1] - hour_hand_length * np.cos(np.radians(hour_angle)),
     )
     dc.line([center, hour_end], fill="black", width=4)
-
-    # Minute hand
     minute_hand_length = 25
-    minute_angle = (10 / 60) * 360  # 10 minutes, in degrees
+    minute_angle = (10 / 60) * 360
     minute_end = (
         center[0] + minute_hand_length * np.sin(np.radians(minute_angle)),
         center[1] - minute_hand_length * np.cos(np.radians(minute_angle)),
     )
     dc.line([center, minute_end], fill="black", width=2)
-
     return image
-
 
 def show_window(icon):
     icon.stop()
     root.after(0, root.deiconify)
 
-
 def exit_program(icon):
     icon.stop()
-    root.destroy()
-
+    root.quit()
 
 def toggle_24h_clock():
     update_layout()
     update_24h_progress()
-    # Directly update the top_progress with the current timer progress percentage
     top_progress["value"] = timer_progress_percentage
-    # Continue to use root.after to ensure any delayed updates are handled properly
     root.after(100, lambda: top_progress.configure(value=timer_progress_percentage))
-
 
 def show_tray_icon():
     global icon
@@ -214,32 +181,21 @@ def show_tray_icon():
     )
     icon.run()
 
-
-def toggle_window(icon, item):
-    show_window(icon)
-
-
 def on_close():
     if minimize_to_tray_var.get() == 1:
         minimize_to_tray()
     else:
-        root.destroy()
-
+        root.quit()
 
 def minimize_to_tray():
-    if minimize_to_tray_var.get() == 1:
-        root.withdraw()
-        show_tray_icon()
-    else:
-        root.deiconify()
-
+    root.withdraw()
+    show_tray_icon()
 
 root = ttk.Window(themename="minty")
 root.title("VizTime")
 root.resizable(True, True)
 
 clock_24h_var = tk.IntVar(value=0)
-
 toggle_top_progress_var = tk.IntVar(value=1)
 repeat_var = tk.IntVar(value=1)
 minimize_to_tray_var = tk.IntVar(value=0)
@@ -252,8 +208,6 @@ window_width = 270
 
 interval = tk.IntVar(value=15)
 volume = tk.IntVar(value=1000)
-running = False
-paused = False
 
 current_interval_label = tk.Label(root, text="Current Interval: 15 min")
 current_interval_label.pack(pady=10)
@@ -320,7 +274,7 @@ top_root.geometry(f"{screen_width}x14+0+0")
 
 top_progress = ttk.Progressbar(top_root, length=screen_width, mode="determinate")
 top_progress.pack(fill=tk.BOTH, expand=True)
-top_progress.place(relx=0, rely=0.5, relwidth=1, relheight=1)
+top_progress.place(relx=0, rely=0.5, relwidth=1, relheight=0.5)
 
 top_progress_24h = ttk.Progressbar(
     top_root,
@@ -334,7 +288,7 @@ top_progress_24h.place(relx=0, rely=0, relwidth=1, relheight=0.5)
 x_cordinate = int((screen_width / 2) - (window_width / 2))
 y_cordinate = int((screen_height / 2) - (window_height / 2))
 
-root.after(1000, update_24h_progress)  # Start updating the 24-hour progress
+root.after(1000, update_24h_progress)
 
 root.geometry(
     "{}x{}+{}+{}".format(window_width, window_height, x_cordinate, y_cordinate)
